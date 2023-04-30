@@ -1,6 +1,11 @@
 # mqtt-cli-rs
 An MQTT Command Line Interface built with rumqttc
 
+## Installation
+```
+curl https://raw.githubusercontent.com/de-sh/mqtt-cli-rs/main/install.sh | sudo sh
+```
+
 ## Usage
 ```
 # Publish: sends an MQTT publish packets to the borker with the set topic, blocks till disconnection.
