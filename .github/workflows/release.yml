@@ -1,0 +1,111 @@
+name: Build and release mqtt-cli-rs binaries
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-release:
+    name: Build release for ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [linux, macos, linux-arm-gnu, windows]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-unknown-linux-musl
+          - build: macos
+            os: macos-latest
+            rust: stable
+            target: x86_64-apple-darwin
+          - build: macos-m1
+            os: macos-latest
+            rust: stable
+            target: aarch64-apple-darwin
+          - build: linux-arm-gnu
+            os: ubuntu-latest
+            rust: stable
+            target: armv7-unknown-linux-gnueabihf
+          - build: linux-aarch-musl
+            os: ubuntu-latest
+            rust: stable
+            target: aarch64-unknown-linux-musl
+          - build: linux-aarch-gnu
+            os: ubuntu-latest
+            rust: stable
+            target: aarch64-unknown-linux-gnu
+          - build: windows
+            os: ubuntu-latest
+            rust: stable
+            target: x86_64-pc-windows-gnu
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Use Cross
+        shell: bash
+        run: |
+          cargo install cross
+          echo "CARGO=cross" >> $GITHUB_ENV
+          echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
+          echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+
+      - name: Build release binary
+        run: cross build --verbose --release ${{ env.TARGET_FLAGS }}
+
+      - name: Strip release binary (linux and macos)
+        if: matrix.build == 'linux' || matrix.build == 'macos' || matrix.build == 'macos-m1'
+        run: strip "target/${{ matrix.target }}/release/mqtt-cli-rs"
+
+      - name: Strip release binary (armv7)
+        if: matrix.build == 'linux-arm-gnu'
+        run: |
+          docker run --rm -v \
+            "$PWD/target:/target:Z" \
+            rustembedded/cross:armv7-unknown-linux-gnueabihf \
+            arm-linux-gnueabihf-strip \
+            /target/armv7-unknown-linux-gnueabihf/release/mqtt-cli-rs
+
+      - name: Strip release binary (aarch-musl)
+        if: matrix.build == 'linux-aarch-musl'
+        run: |
+          docker run --rm -v \
+            "$PWD/target:/target:Z" \
+            rustembedded/cross:aarch64-unknown-linux-musl \
+            aarch64-linux-musl-strip \
+            /target/aarch64-unknown-linux-musl/release/mqtt-cli-rs
+
+      - name: Strip release binary (aarch-gnu)
+        if: matrix.build == 'linux-aarch-gnu'
+        run: |
+          docker run --rm -v \
+            "$PWD/target:/target:Z" \
+            rustembedded/cross:aarch64-unknown-linux-gnu \
+            aarch64-linux-gnu-strip \
+            /target/aarch64-unknown-linux-gnu/release/mqtt-cli-rs
+      
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.3.2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload release archive
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_release.outputs.upload_url }}
+          asset_path: ./target/${{ matrix.target }}/release/mqtt-cli-rs
+          asset_name: uplink-${{matrix.target}}
+          asset_content_type: application/octet-stream
+
